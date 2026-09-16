@@ -1,0 +1,73 @@
+name: Build and Sign APK
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+
+      - name: Create key.properties
+        run: |
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=app/release.keystore\n' \
+            "${{ secrets.KEYSTORE_PASSWORD }}" \
+            "${{ secrets.KEY_PASSWORD }}" \
+            "${{ secrets.KEY_ALIAS }}" \
+            > android/key.properties
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Check APK size
+        run: |
+          APK=$(find build/app/outputs/flutter-apk -name "*.apk" | head -1)
+          SIZE=$(du -h "$APK" | cut -f1)
+          echo "APK: $APK ($SIZE)"
+          MAX_KB=133120
+          ACTUAL_KB=$(du -k "$APK" | cut -f1)
+          if [ "$ACTUAL_KB" -gt "$MAX_KB" ]; then
+            echo "::error::APK exceeds 130MB limit (${SIZE})"
+            exit 1
+          fi
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+
+      - name: Upload APK to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk
+          draft: true
