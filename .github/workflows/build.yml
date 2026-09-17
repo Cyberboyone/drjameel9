@@ -43,31 +43,56 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Build release APK
+      - name: Build release APKs (split per ABI)
         run: flutter build apk --release --split-per-abi
 
-      - name: Check APK sizes
+      - name: Build release AAB
+        run: flutter build appbundle --release
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Check release artifact sizes
         run: |
-          for APK in build/app/outputs/flutter-apk/*.apk; do
-            SIZE=$(du -h "$APK" | cut -f1)
-            ACTUAL_KB=$(du -k "$APK" | cut -f1)
-            echo "APK: $APK ($SIZE)"
-            if [ "$ACTUAL_KB" -gt 133120 ]; then
-              echo "::error::$APK exceeds 130MB limit ($SIZE)"
+          set -e
+          for A in build/app/outputs/flutter-apk/*-release.apk build/app/outputs/bundle/release/app-release.aab; do
+            [ -f "$A" ] || { echo "missing $A"; exit 1; }
+            SIZE=$(du -h "$A" | cut -f1)
+            KB=$(du -k "$A" | cut -f1)
+            echo "artifact: $A ($SIZE)"
+            if [ "$KB" -gt 133120 ]; then
+              echo "::error::$A exceeds 130MB limit ($SIZE)"
               exit 1
             fi
           done
 
-      - name: Upload APK artifact
+      - name: Upload release APKs
         uses: actions/upload-artifact@v4
         with:
           name: release-apks
-          path: build/app/outputs/flutter-apk/*.apk
+          path: build/app/outputs/flutter-apk/*-release.apk
           retention-days: 30
 
-      - name: Upload APK to release
+      - name: Upload release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: build/app/outputs/flutter-apk/*-debug.apk
+          retention-days: 30
+
+      - name: Release artifacts
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/*.apk
+          files: |
+            build/app/outputs/flutter-apk/*-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+            build/app/outputs/flutter-apk/*-debug.apk
           draft: true
