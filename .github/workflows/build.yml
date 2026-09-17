@@ -46,28 +46,28 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: Check APK size
+      - name: Check APK sizes
         run: |
-          APK=$(find build/app/outputs/flutter-apk -name "*.apk" | head -1)
-          SIZE=$(du -h "$APK" | cut -f1)
-          echo "APK: $APK ($SIZE)"
-          MAX_KB=133120
-          ACTUAL_KB=$(du -k "$APK" | cut -f1)
-          if [ "$ACTUAL_KB" -gt "$MAX_KB" ]; then
-            echo "::error::APK exceeds 130MB limit (${SIZE})"
-            exit 1
-          fi
+          for APK in build/app/outputs/flutter-apk/*.apk; do
+            SIZE=$(du -h "$APK" | cut -f1)
+            ACTUAL_KB=$(du -k "$APK" | cut -f1)
+            echo "APK: $APK ($SIZE)"
+            if [ "$ACTUAL_KB" -gt 133120 ]; then
+              echo "::error::$APK exceeds 130MB limit ($SIZE)"
+              exit 1
+            fi
+          done
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: release-apks
+          path: build/app/outputs/flutter-apk/*.apk
           retention-days: 30
 
       - name: Upload APK to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: build/app/outputs/flutter-apk/*.apk
           draft: true
